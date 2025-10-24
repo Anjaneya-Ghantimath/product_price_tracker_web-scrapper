@@ -1,0 +1,43 @@
+app:
+  name: "Price Tracker"
+  theme: "light"
+  primary_color: "#FF6B6B"
+  secondary_color: "#4ECDC4"
+  quiet_hours:
+    start: "23:00"
+    end: "07:00"
+
+scraping:
+  default_check_frequency_hours: 6
+  enable_async: true
+  rate_limit_seconds: 2
+  max_concurrency: 8
+  user_agents:
+    - "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+    - "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36"
+  retry:
+    max_attempts: 3
+    backoff_base_seconds: 1.5
+
+alerts:
+  enable_email: true
+  daily_digest: true
+  throttle_per_product_per_day: 1
+  thresholds:
+    medium_drop_percent: 15
+    high_drop_percent: 30
+    critical_drop_percent: 50
+
+database:
+  path: "./data/products.db"
+  pool_size: 5
+
+scheduler:
+  health_check_interval_minutes: 60
+  cleanup_interval_hours: 24
+  adaptive:
+    stable_hours: 6
+    volatile_hours: 2
+    above_threshold_hours: 12
+
