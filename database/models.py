@@ -53,6 +53,40 @@ CREATE TABLE IF NOT EXISTS alerts (
 );
 """
 
+EMAIL_SUBSCRIBERS_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS email_subscribers (
+    id INTEGER PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    name TEXT,
+    is_active BOOLEAN DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    preferences TEXT DEFAULT '{}'
+);
+"""
+
+ALERT_SCHEDULES_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS alert_schedules (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    frequency_hours INTEGER DEFAULT 24,
+    is_active BOOLEAN DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+"""
+
+GMAIL_ACCOUNTS_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS gmail_accounts (
+    id INTEGER PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    app_password TEXT NOT NULL,
+    name TEXT,
+    is_active BOOLEAN DEFAULT 1,
+    is_default BOOLEAN DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_used TIMESTAMP
+);
+"""
+
 
 @dataclass
 class Product:
@@ -89,5 +123,36 @@ class Alert:
     price_at_alert: Optional[float]
     timestamp: Optional[str]
     is_read: bool
+
+
+@dataclass
+class EmailSubscriber:
+    id: Optional[int]
+    email: str
+    name: Optional[str]
+    is_active: bool
+    created_at: Optional[str]
+    preferences: str
+
+
+@dataclass
+class AlertSchedule:
+    id: Optional[int]
+    name: str
+    frequency_hours: int
+    is_active: bool
+    created_at: Optional[str]
+
+
+@dataclass
+class GmailAccount:
+    id: Optional[int]
+    email: str
+    app_password: str
+    name: Optional[str]
+    is_active: bool
+    is_default: bool
+    created_at: Optional[str]
+    last_used: Optional[str]
 
 

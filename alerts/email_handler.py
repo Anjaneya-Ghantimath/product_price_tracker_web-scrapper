@@ -54,16 +54,18 @@ class EmailHandler:
 
     def send_alert(
         self,
-        to_email: str,
+        to_emails: List[str],
         subject: str,
         product: Dict[str, any],
         history_df: pd.DataFrame,
         alert_message: str,
         buy_url: str,
     ) -> None:
+        """Send alert to multiple email addresses."""
         if is_quiet_hours(self.cfg.quiet_start, self.cfg.quiet_end):
             logger.info("Quiet hours active; skipping immediate email.")
             return
+        
         try:
             chart_uri = self._render_chart_inline(history_df)
         except Exception as exc:  # noqa: BLE001
@@ -72,9 +74,53 @@ class EmailHandler:
 
         template = self.env.get_template("alert_email.html")
         html = template.render(product=product, alert_message=alert_message, chart_uri=chart_uri, buy_url=buy_url)
-        try:
-            self.yag.send(to=to_email, subject=subject, contents=html)
-        except Exception as exc:  # noqa: BLE001
-            logger.error(f"Email send failed: {exc}")
+        
+        # Send to all email addresses
+        for email in to_emails:
+            try:
+                self.yag.send(to=email, subject=subject, contents=html)
+                logger.info(f"Alert sent successfully to {email}")
+            except Exception as exc:  # noqa: BLE001
+                logger.error(f"Email send failed to {email}: {exc}")
+
+    def send_bulk_alert(
+        self,
+        subject: str,
+        products: List[Dict[str, any]],
+        alert_message: str,
+        to_emails: List[str],
+    ) -> None:
+        """Send bulk alert for multiple products."""
+        if is_quiet_hours(self.cfg.quiet_start, self.cfg.quiet_end):
+            logger.info("Quiet hours active; skipping bulk email.")
+            return
+        
+        template = self.env.get_template("bulk_alert_email.html")
+        html = template.render(products=products, alert_message=alert_message)
+        
+        for email in to_emails:
+            try:
+                self.yag.send(to=email, subject=subject, contents=html)
+                logger.info(f"Bulk alert sent successfully to {email}")
+            except Exception as exc:  # noqa: BLE001
+                logger.error(f"Bulk email send failed to {email}: {exc}")
+
+    def send_digest(
+        self,
+        to_emails: List[str],
+        subject: str,
+        products: List[Dict[str, any]],
+        digest_data: Dict[str, any],
+    ) -> None:
+        """Send daily/weekly digest to subscribers."""
+        template = self.env.get_template("digest_email.html")
+        html = template.render(products=products, digest_data=digest_data)
+        
+        for email in to_emails:
+            try:
+                self.yag.send(to=email, subject=subject, contents=html)
+                logger.info(f"Digest sent successfully to {email}")
+            except Exception as exc:  # noqa: BLE001
+                logger.error(f"Digest email send failed to {email}: {exc}")
 
 

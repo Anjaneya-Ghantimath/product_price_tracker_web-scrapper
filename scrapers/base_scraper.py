@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import random
+import ssl
 import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
@@ -47,7 +48,14 @@ class BaseScraper(ABC):
         attempt = 0
         while True:
             await self.ratelimiter.wait()
-            headers = {"User-Agent": random.choice(self.user_agents)}
+            headers = {
+                "User-Agent": random.choice(self.user_agents),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
+                "Accept-Encoding": "gzip, deflate",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+            }
             try:
                 async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=20)) as resp:
                     if resp.status == 200:
@@ -60,6 +68,9 @@ class BaseScraper(ABC):
                 attempt += 1
                 if attempt >= max_attempts:
                     logger.error(f"Fetch failed for {url}: {exc}")
+                    # For SSL errors, try with a more permissive SSL context
+                    if "SSL" in str(exc) or "certificate" in str(exc).lower():
+                        logger.warning(f"SSL error detected for {url}, this might be due to certificate issues")
                     raise
                 sleep_for = backoff_base ** attempt + random.uniform(0, 0.5)
                 logger.info(f"Retrying {url} in {sleep_for:.2f}s (attempt {attempt})")

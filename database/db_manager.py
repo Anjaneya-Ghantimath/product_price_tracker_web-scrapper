@@ -17,8 +17,17 @@ from loguru import logger
 
 from .models import (
     ALERTS_SCHEMA_SQL,
+    ALERT_SCHEDULES_SCHEMA_SQL,
+    EMAIL_SUBSCRIBERS_SCHEMA_SQL,
+    GMAIL_ACCOUNTS_SCHEMA_SQL,
     PRICE_HISTORY_SCHEMA_SQL,
     PRODUCTS_SCHEMA_SQL,
+    Alert,
+    AlertSchedule,
+    EmailSubscriber,
+    GmailAccount,
+    PriceHistory,
+    Product,
 )
 
 
@@ -65,6 +74,9 @@ class DatabaseManager:
             cur.execute(PRODUCTS_SCHEMA_SQL)
             cur.execute(PRICE_HISTORY_SCHEMA_SQL)
             cur.execute(ALERTS_SCHEMA_SQL)
+            cur.execute(EMAIL_SUBSCRIBERS_SCHEMA_SQL)
+            cur.execute(ALERT_SCHEDULES_SCHEMA_SQL)
+            cur.execute(GMAIL_ACCOUNTS_SCHEMA_SQL)
             conn.commit()
 
     @contextmanager
@@ -237,5 +249,296 @@ class DatabaseManager:
             cur.execute("DELETE FROM price_history WHERE timestamp < ?", (cutoff,))
             conn.commit()
             return cur.rowcount
+
+    # Email Subscribers Management
+    def add_email_subscriber(self, email: str, name: str = None, preferences: str = "{}") -> int:
+        """Add a new email subscriber."""
+        try:
+            with self.get_conn() as conn:
+                cur = conn.cursor()
+                cur.execute(
+                    "INSERT INTO email_subscribers (email, name, preferences) VALUES (?, ?, ?)",
+                    (email, name, preferences)
+                )
+                conn.commit()
+                return cur.lastrowid
+        except sqlite3.OperationalError as e:
+            if "database is locked" in str(e):
+                logger.warning("Database locked, retrying...")
+                import time
+                time.sleep(0.1)
+                return self.add_email_subscriber(email, name, preferences)
+            else:
+                raise
+
+    def get_email_subscribers(self, active_only: bool = True) -> List[EmailSubscriber]:
+        """Get all email subscribers."""
+        with self.get_conn() as conn:
+            cur = conn.cursor()
+            if active_only:
+                cur.execute("SELECT * FROM email_subscribers WHERE is_active = 1")
+            else:
+                cur.execute("SELECT * FROM email_subscribers")
+            
+            rows = cur.fetchall()
+            return [
+                EmailSubscriber(
+                    id=row[0],
+                    email=row[1],
+                    name=row[2],
+                    is_active=bool(row[3]),
+                    created_at=row[4],
+                    preferences=row[5]
+                )
+                for row in rows
+            ]
+
+    def update_email_subscriber(self, subscriber_id: int, **updates) -> None:
+        """Update email subscriber details."""
+        if not updates:
+            return
+        
+        set_clauses = []
+        values = []
+        for key, value in updates.items():
+            set_clauses.append(f"{key} = ?")
+            values.append(value)
+        
+        values.append(subscriber_id)
+        
+        try:
+            with self.get_conn() as conn:
+                cur = conn.cursor()
+                cur.execute(
+                    f"UPDATE email_subscribers SET {', '.join(set_clauses)} WHERE id = ?",
+                    values
+                )
+                conn.commit()
+        except sqlite3.OperationalError as e:
+            if "database is locked" in str(e):
+                logger.warning("Database locked, retrying...")
+                import time
+                time.sleep(0.1)
+                return self.update_email_subscriber(subscriber_id, **updates)
+            else:
+                raise
+
+    def delete_email_subscriber(self, subscriber_id: int) -> None:
+        """Delete an email subscriber."""
+        try:
+            with self.get_conn() as conn:
+                cur = conn.cursor()
+                cur.execute("DELETE FROM email_subscribers WHERE id = ?", (subscriber_id,))
+                conn.commit()
+        except sqlite3.OperationalError as e:
+            if "database is locked" in str(e):
+                logger.warning("Database locked, retrying...")
+                import time
+                time.sleep(0.1)
+                return self.delete_email_subscriber(subscriber_id)
+            else:
+                raise
+
+    # Alert Schedules Management
+    def add_alert_schedule(self, name: str, frequency_hours: int = 24) -> int:
+        """Add a new alert schedule."""
+        try:
+            with self.get_conn() as conn:
+                cur = conn.cursor()
+                cur.execute(
+                    "INSERT INTO alert_schedules (name, frequency_hours) VALUES (?, ?)",
+                    (name, frequency_hours)
+                )
+                conn.commit()
+                return cur.lastrowid
+        except sqlite3.OperationalError as e:
+            if "database is locked" in str(e):
+                logger.warning("Database locked, retrying...")
+                import time
+                time.sleep(0.1)
+                return self.add_alert_schedule(name, frequency_hours)
+            else:
+                raise
+
+    def get_alert_schedules(self, active_only: bool = True) -> List[AlertSchedule]:
+        """Get all alert schedules."""
+        with self.get_conn() as conn:
+            cur = conn.cursor()
+            if active_only:
+                cur.execute("SELECT * FROM alert_schedules WHERE is_active = 1")
+            else:
+                cur.execute("SELECT * FROM alert_schedules")
+            
+            rows = cur.fetchall()
+            return [
+                AlertSchedule(
+                    id=row[0],
+                    name=row[1],
+                    frequency_hours=row[2],
+                    is_active=bool(row[3]),
+                    created_at=row[4]
+                )
+                for row in rows
+            ]
+
+    def update_alert_schedule(self, schedule_id: int, **updates) -> None:
+        """Update alert schedule details."""
+        if not updates:
+            return
+        
+        set_clauses = []
+        values = []
+        for key, value in updates.items():
+            set_clauses.append(f"{key} = ?")
+            values.append(value)
+        
+        values.append(schedule_id)
+        
+        with self.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                f"UPDATE alert_schedules SET {', '.join(set_clauses)} WHERE id = ?",
+                values
+            )
+            conn.commit()
+
+    def delete_alert_schedule(self, schedule_id: int) -> None:
+        """Delete an alert schedule."""
+        with self.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM alert_schedules WHERE id = ?", (schedule_id,))
+            conn.commit()
+
+    # Gmail Accounts Management
+    def add_gmail_account(self, email: str, app_password: str, name: str = None, is_default: bool = False) -> int:
+        """Add a new Gmail account."""
+        try:
+            with self.get_conn() as conn:
+                cur = conn.cursor()
+                
+                # If this is set as default, unset other defaults
+                if is_default:
+                    cur.execute("UPDATE gmail_accounts SET is_default = 0")
+                
+                cur.execute(
+                    "INSERT INTO gmail_accounts (email, app_password, name, is_default) VALUES (?, ?, ?, ?)",
+                    (email, app_password, name, is_default)
+                )
+                conn.commit()
+                return cur.lastrowid
+        except sqlite3.OperationalError as e:
+            if "database is locked" in str(e):
+                logger.warning("Database locked, retrying...")
+                import time
+                time.sleep(0.1)
+                return self.add_gmail_account(email, app_password, name, is_default)
+            else:
+                raise
+
+    def get_gmail_accounts(self, active_only: bool = True) -> List[GmailAccount]:
+        """Get all Gmail accounts."""
+        with self.get_conn() as conn:
+            cur = conn.cursor()
+            if active_only:
+                cur.execute("SELECT * FROM gmail_accounts WHERE is_active = 1")
+            else:
+                cur.execute("SELECT * FROM gmail_accounts")
+            
+            rows = cur.fetchall()
+            return [
+                GmailAccount(
+                    id=row[0],
+                    email=row[1],
+                    app_password=row[2],
+                    name=row[3],
+                    is_active=bool(row[4]),
+                    is_default=bool(row[5]),
+                    created_at=row[6],
+                    last_used=row[7]
+                )
+                for row in rows
+            ]
+
+    def get_default_gmail_account(self) -> Optional[GmailAccount]:
+        """Get the default Gmail account."""
+        with self.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM gmail_accounts WHERE is_default = 1 AND is_active = 1 LIMIT 1")
+            row = cur.fetchone()
+            if row:
+                return GmailAccount(
+                    id=row[0],
+                    email=row[1],
+                    app_password=row[2],
+                    name=row[3],
+                    is_active=bool(row[4]),
+                    is_default=bool(row[5]),
+                    created_at=row[6],
+                    last_used=row[7]
+                )
+            return None
+
+    def update_gmail_account(self, account_id: int, **updates) -> None:
+        """Update Gmail account details."""
+        if not updates:
+            return
+        
+        set_clauses = []
+        values = []
+        for key, value in updates.items():
+            set_clauses.append(f"{key} = ?")
+            values.append(value)
+        
+        values.append(account_id)
+        
+        try:
+            with self.get_conn() as conn:
+                cur = conn.cursor()
+                
+                # If setting as default, unset other defaults
+                if updates.get('is_default'):
+                    cur.execute("UPDATE gmail_accounts SET is_default = 0")
+                
+                cur.execute(
+                    f"UPDATE gmail_accounts SET {', '.join(set_clauses)} WHERE id = ?",
+                    values
+                )
+                conn.commit()
+        except sqlite3.OperationalError as e:
+            if "database is locked" in str(e):
+                logger.warning("Database locked, retrying...")
+                import time
+                time.sleep(0.1)
+                return self.update_gmail_account(account_id, **updates)
+            else:
+                raise
+
+    def delete_gmail_account(self, account_id: int) -> None:
+        """Delete a Gmail account."""
+        try:
+            with self.get_conn() as conn:
+                cur = conn.cursor()
+                cur.execute("DELETE FROM gmail_accounts WHERE id = ?", (account_id,))
+                conn.commit()
+        except sqlite3.OperationalError as e:
+            if "database is locked" in str(e):
+                logger.warning("Database locked, retrying...")
+                import time
+                time.sleep(0.1)
+                return self.delete_gmail_account(account_id)
+            else:
+                raise
+
+    def test_gmail_account(self, email: str, app_password: str) -> bool:
+        """Test Gmail account credentials."""
+        try:
+            import yagmail
+            yag = yagmail.SMTP(email, app_password)
+            # Try to send a test email to self
+            yag.send(to=email, subject="Test Email", contents="This is a test email from Price Tracker.")
+            return True
+        except Exception as e:
+            logger.error(f"Gmail test failed for {email}: {e}")
+            return False
 
 

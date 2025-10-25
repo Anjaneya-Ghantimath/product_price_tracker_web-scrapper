@@ -6,29 +6,30 @@ from typing import Any, Dict
 from .base_scraper import BaseScraper, bs4
 
 
-class SnapdealScraper(BaseScraper):
+class MyntraScraper(BaseScraper):
     def supports(self, url: str) -> bool:
-        return "snapdeal.com" in url
+        return "myntra.com" in url
 
     async def parse(self, html: str, url: str) -> Dict[str, Any]:
         soup = bs4(html)
-        # Product title - Snapdeal specific selectors
-        title_el = soup.select_one("h1.pdp-e-i-head") or \
-                  soup.select_one("h1#productTitle") or \
+        
+        # Product title - Myntra specific selectors
+        title_el = soup.select_one("h1[data-testid='product-title']") or \
+                  soup.select_one(".pdp-product-name") or \
                   soup.select_one("h1") or \
                   soup.select_one(".pdp-product-name") or \
                   soup.select_one("[class*='product-name']") or \
                   soup.select_one(".product-title")
         title = title_el.get_text(strip=True) if title_el else None
 
-        # Current price - Snapdeal specific selectors
-        price_el = soup.select_one("span.pdp-final-price") or \
-                  soup.select_one("span#selling-price-id") or \
+        # Current price - Myntra specific selectors
+        price_el = soup.select_one("[data-testid='product-price']") or \
+                  soup.select_one(".pdp-product-price") or \
                   soup.select_one(".price") or \
                   soup.select_one("[class*='price']") or \
                   soup.select_one(".selling-price") or \
                   soup.select_one(".pdp-price") or \
-                  soup.select_one(".final-price")
+                  soup.select_one(".pdp-product-price-value")
         price_text = price_el.get_text(strip=True) if price_el else None
         
         # If no price found with selectors, try to find price patterns in text
@@ -46,39 +47,38 @@ class SnapdealScraper(BaseScraper):
                     price_text = matches[0]
                     break
 
-        # Original price (strikethrough) - Snapdeal specific selectors
-        orig_el = soup.select_one("span.pdpCutPrice") or \
-                 soup.select_one("span#original-price-id") or \
-                 soup.select_one(".original-price") or \
+        # Original price (strikethrough) - Myntra specific selectors
+        orig_el = soup.select_one("[data-testid='product-original-price']") or \
+                 soup.select_one(".pdp-product-original-price") or \
                  soup.select_one(".strikethrough") or \
                  soup.select_one("[class*='original']") or \
-                 soup.select_one(".mrp")
+                 soup.select_one(".mrp") or \
+                 soup.select_one(".pdp-mrp")
         orig_text = orig_el.get_text(strip=True) if orig_el else None
 
-        # Product image - Snapdeal specific selectors (Amazon-like approach)
+        # Product image - Myntra specific selectors (Amazon-like approach)
         image_url = None
         
         # Try multiple approaches to find the main product image
         img_selectors = [
-            # Primary Snapdeal selectors
-            "img.cloudzoom",
-            "img#bx-slider-left-image-panel",
-            ".product-image img",
+            # Primary Myntra selectors
+            "[data-testid='product-image'] img",
+            ".pdp-product-image img",
+            ".pdp-product-image-container img",
             "img[alt*='product']",
-            "img[src*='snapdeal']",
+            ".product-image img",
+            "img[src*='myntra']",
             "img[class*='product']",
+            "img[data-testid='product-image']",
             ".image-gallery img",
             ".pdp-image img",
-            ".product-photo img",
-            # Additional Snapdeal patterns
+            # Additional Myntra patterns
             "img[class*='pdp']",
-            "img[alt*='mobile']",
-            "img[alt*='laptop']",
+            "img[alt*='dress']",
             "img[alt*='shirt']",
             "img[alt*='shoes']",
-            "img[alt*='watch']",
             "img[alt*='bag']",
-            "img[alt*='book']"
+            "img[alt*='watch']"
         ]
         
         # Try each selector
@@ -93,7 +93,7 @@ class SnapdealScraper(BaseScraper):
                         if temp_url.startswith("//"):
                             temp_url = "https:" + temp_url
                         elif temp_url.startswith("/"):
-                            temp_url = "https://www.snapdeal.com" + temp_url
+                            temp_url = "https://www.myntra.com" + temp_url
                         
                         # Check if it's a valid product image
                         if not any(badge in temp_url.lower() for badge in ['plus_', 'badge_', 'icon_', 'logo_', 'banner_', 'header_', 'footer_', 'sprite', 'placeholder']):
@@ -125,7 +125,7 @@ class SnapdealScraper(BaseScraper):
                                 if temp_url.startswith("//"):
                                     temp_url = "https:" + temp_url
                                 elif temp_url.startswith("/"):
-                                    temp_url = "https://www.snapdeal.com" + temp_url
+                                    temp_url = "https://www.myntra.com" + temp_url
                                 
                                 if not any(badge in temp_url.lower() for badge in ['plus_', 'badge_', 'icon_', 'logo_', 'banner_', 'header_', 'footer_', 'sprite', 'placeholder']):
                                     image_url = temp_url
@@ -135,9 +135,15 @@ class SnapdealScraper(BaseScraper):
                 if image_url:
                     break
 
+        # Availability
         availability = True
-        if soup.find(text=re.compile("sold out|out of stock", re.I)):
-            availability = False
+        out_of_stock_indicators = [
+            "out of stock", "sold out", "unavailable", "not available", "size not available", "currently unavailable"
+        ]
+        for indicator in out_of_stock_indicators:
+            if soup.find(text=re.compile(indicator, re.I)):
+                availability = False
+                break
 
         def parse_price(text: str | None) -> float | None:
             if not text:
@@ -162,7 +168,5 @@ class SnapdealScraper(BaseScraper):
             "discount_percent": discount_percent,
             "image_url": image_url,
             "availability": availability,
-            "website": "Snapdeal",
+            "website": "Myntra",
         }
-
-

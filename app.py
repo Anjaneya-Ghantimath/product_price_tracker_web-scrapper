@@ -160,7 +160,12 @@ def sidebar(cfg: dict, db: DatabaseManager) -> str:
                     website_icons = {
                         'Amazon': '🛒',
                         'Flipkart': '🛍️', 
-                        'Snapdeal': '📦'
+                        'Snapdeal': '📦',
+                        'Meesho': '👗',
+                        'Myntra': '👔',
+                        'Nykaa': '💄',
+                        'Ajio': '👕',
+                        'JioMart': '🛒'
                     }
                     icon = website_icons.get(website, '🌐')
                     st.caption(f"{icon} {website}: {count}")
@@ -287,7 +292,12 @@ def render_product_card(row, db: DatabaseManager, is_list: bool = False) -> None
             website_icons = {
                 'Amazon': '🛒',
                 'Flipkart': '🛍️', 
-                'Snapdeal': '📦'
+                'Snapdeal': '📦',
+                'Meesho': '👗',
+                'Myntra': '👔',
+                'Nykaa': '💄',
+                'Ajio': '👕',
+                'JioMart': '🛒'
             }
             icon = website_icons.get(website, '🌐')
             st.caption(f"{icon} {website}")
@@ -367,7 +377,12 @@ def render_product_card(row, db: DatabaseManager, is_list: bool = False) -> None
             with st.expander("✏️ Edit Product", expanded=True):
                 with st.form(f"edit_form_{pid}"):
                     new_name = st.text_input("Product Name", value=row.get('name') or '')
-                    new_threshold = st.number_input("Price Threshold (₹)", value=row.get('user_threshold') or 0, min_value=0)
+                    threshold_value = row.get('user_threshold')
+                    if threshold_value is None:
+                        threshold_value = 0.0
+                    else:
+                        threshold_value = float(threshold_value)
+                    new_threshold = st.number_input("Price Threshold (₹)", value=threshold_value, min_value=0.0, step=0.01)
                     new_category = st.text_input("Category", value=row.get('category') or '')
                     
                     if st.form_submit_button("💾 Save Changes"):
@@ -446,7 +461,7 @@ def render_add_products(cfg: dict, db: DatabaseManager) -> None:
     with col1:
         scrape_and_add = st.checkbox("Scrape product details automatically", value=True)
     with col2:
-        user_threshold = st.number_input("Default price threshold (₹)", min_value=0, value=0)
+        user_threshold = st.number_input("Default price threshold (₹)", min_value=0.0, value=0.0, step=0.01)
     
     if st.button("Add Products", type="primary"):
         if not urls_text.strip():
@@ -467,18 +482,35 @@ def render_add_products(cfg: dict, db: DatabaseManager) -> None:
         
         if scrape_and_add:
             # Scrape product details
-            with st.spinner("Scraping product details..."):
-                cfg_s = cfg["scraping"]
-                scraped_data = asyncio.run(
-                    scrape_multiple_products(
-                        good_urls,
-                        user_agents=cfg_s["user_agents"],
-                        rate_limit_seconds=cfg_s["rate_limit_seconds"],
-                        max_concurrency=cfg_s["max_concurrency"],
-                        max_attempts=cfg_s["retry"]["max_attempts"],
-                        backoff_base=cfg_s["retry"]["backoff_base_seconds"],
+            with st.spinner("🔍 Scraping product details..."):
+                try:
+                    cfg_s = cfg["scraping"]
+                    scraped_data = asyncio.run(
+                        scrape_multiple_products(
+                            good_urls,
+                            user_agents=cfg_s["user_agents"],
+                            rate_limit_seconds=cfg_s["rate_limit_seconds"],
+                            max_concurrency=cfg_s["max_concurrency"],
+                            max_attempts=cfg_s["retry"]["max_attempts"],
+                            backoff_base=cfg_s["retry"]["backoff_base_seconds"],
+                        )
                     )
-                )
+                    
+                    # Debug: Show what was scraped
+                    if scraped_data:
+                        st.success(f"✅ Successfully scraped {len(scraped_data)} products")
+                        for i, data in enumerate(scraped_data):
+                            title = data.get('title', 'No title')
+                            price = data.get('current_price', 'No price')
+                            website = data.get('website', 'Unknown')
+                            st.write(f"📦 {title} - ₹{price} ({website})")
+                    else:
+                        st.warning("⚠️ No products were scraped. Check if URLs are valid and accessible.")
+                        
+                except Exception as e:
+                    st.error(f"❌ Scraping failed: {e}")
+                    st.error("💡 Try checking if the URLs are accessible and the websites are not blocking requests.")
+                    return
             
             # Add scraped products to database
             added_count = 0
@@ -492,6 +524,16 @@ def render_add_products(cfg: dict, db: DatabaseManager) -> None:
                         website = "Flipkart"
                     elif "snapdeal.com" in data["url"]:
                         website = "Snapdeal"
+                    elif "meesho.com" in data["url"]:
+                        website = "Meesho"
+                    elif "myntra.com" in data["url"]:
+                        website = "Myntra"
+                    elif "nykaa.com" in data["url"]:
+                        website = "Nykaa"
+                    elif "ajio.com" in data["url"]:
+                        website = "Ajio"
+                    elif "jiomart.com" in data["url"]:
+                        website = "JioMart"
                     
                     # Add product to database
                     pid = db.add_product(
@@ -553,92 +595,113 @@ def render_add_products(cfg: dict, db: DatabaseManager) -> None:
     # Single URL preview
     st.subheader("Preview Single Product")
     demo_url = st.text_input("Enter a single URL to preview scrape", 
-                            placeholder="https://www.amazon.in/dp/B0CHX2Z5H3")
+                            placeholder="https://www.amazon.in/dp/B0CHX2Z5H3 or https://www.flipkart.com/p/itm4f5474d1f")
     
     if st.button("Preview Scrape") and demo_url:
         if not is_valid_url(demo_url):
             st.error("Invalid URL format.")
             return
             
-        with st.spinner("Scraping product details..."):
-            cfg_s = cfg["scraping"]
-            data = asyncio.run(
-                scrape_multiple_products(
-                    [demo_url],
-                    user_agents=cfg_s["user_agents"],
-                    rate_limit_seconds=cfg_s["rate_limit_seconds"],
-                    max_concurrency=cfg_s["max_concurrency"],
-                    max_attempts=cfg_s["retry"]["max_attempts"],
-                    backoff_base=cfg_s["retry"]["backoff_base_seconds"],
-                )
-            )
-        
-        if data:
-            st.success("✅ Scraping successful!")
-            
-            # Display scraped data in a nice format
-            product_data = data[0]
-            
-            col1, col2 = st.columns([1, 1])
-            with col1:
-                if product_data.get("image_url"):
-                    st.image(product_data["image_url"], width=200)
-                else:
-                    st.info("No image found")
-            
-            with col2:
-                st.markdown(f"**Title:** {product_data.get('title', 'N/A')}")
-                st.markdown(f"**Website:** {product_data.get('website', 'Unknown')}")
-                st.markdown(f"**Current Price:** ₹{product_data.get('current_price', 'N/A')}")
-                st.markdown(f"**Original Price:** ₹{product_data.get('original_price', 'N/A')}")
-                
-                # Fix the discount formatting issue
-                discount = product_data.get('discount_percent')
-                if discount is not None and discount != 0:
-                    st.markdown(f"**Discount:** {discount:.1f}%")
-                else:
-                    st.markdown("**Discount:** 0%")
-                
-                st.markdown(f"**Availability:** {'In Stock' if product_data.get('availability') else 'Out of Stock'}")
-            
-            # Add to database button
-            if st.button("Add This Product", type="primary"):
-                try:
-                    pid = db.add_product(
-                        url=product_data["url"],
-                        name=sanitize_text(product_data.get("title")),
-                        website=product_data.get("website"),
-                        category=None,
-                        image_path=None,
-                        user_threshold=user_threshold if user_threshold > 0 else None,
-                        check_frequency=6
+        with st.spinner("🔍 Scraping product details..."):
+            try:
+                cfg_s = cfg["scraping"]
+                data = asyncio.run(
+                    scrape_multiple_products(
+                        [demo_url],
+                        user_agents=cfg_s["user_agents"],
+                        rate_limit_seconds=cfg_s["rate_limit_seconds"],
+                        max_concurrency=cfg_s["max_concurrency"],
+                        max_attempts=cfg_s["retry"]["max_attempts"],
+                        backoff_base=cfg_s["retry"]["backoff_base_seconds"],
                     )
+                )
+                
+                if data and len(data) > 0:
+                    st.success("✅ Scraping successful!")
                     
-                    # Download image
-                    if product_data.get("image_url"):
-                        image_path = download_image(product_data["image_url"], pid)
-                        if image_path:
-                            db.update_product(pid, {"image_path": image_path})
+                    # Display scraped data in a nice format
+                    product_data = data[0]
                     
-                    # Add price history
-                    if product_data.get("current_price"):
-                        db.add_price_history(
-                            pid,
-                            product_data["current_price"],
-                            product_data.get("original_price"),
-                            product_data.get("discount_percent"),
-                            product_data.get("availability", True)
-                        )
+                    col1, col2 = st.columns([1, 1])
+                    with col1:
+                        if product_data.get("image_url"):
+                            try:
+                                # Validate and clean image URL
+                                image_url = product_data["image_url"]
+                                # Handle relative URLs
+                                if image_url.startswith("//"):
+                                    image_url = "https:" + image_url
+                                elif image_url.startswith("/"):
+                                    # Extract domain from the original URL
+                                    from urllib.parse import urlparse
+                                    parsed = urlparse(demo_url)
+                                    image_url = f"{parsed.scheme}://{parsed.netloc}{image_url}"
+                                
+                                st.image(image_url, width=200)
+                            except Exception as e:
+                                st.warning(f"Could not load image: {str(e)[:100]}...")
+                                st.info("No image available")
+                        else:
+                            st.info("No image found")
                     
-                    st.success("Product added successfully!")
-                    # Clear cache to refresh dashboard
-                    st.cache_data.clear()
-                    st.rerun()
+                    with col2:
+                        st.markdown(f"**Title:** {product_data.get('title', 'N/A')}")
+                        st.markdown(f"**Website:** {product_data.get('website', 'Unknown')}")
+                        st.markdown(f"**Current Price:** ₹{product_data.get('current_price', 'N/A')}")
+                        st.markdown(f"**Original Price:** ₹{product_data.get('original_price', 'N/A')}")
+                        
+                        # Fix the discount formatting issue
+                        discount = product_data.get('discount_percent')
+                        if discount is not None and discount != 0:
+                            st.markdown(f"**Discount:** {discount:.1f}%")
+                        else:
+                            st.markdown("**Discount:** 0%")
+                        
+                        st.markdown(f"**Availability:** {'In Stock' if product_data.get('availability') else 'Out of Stock'}")
                     
-                except Exception as e:
-                    st.error(f"Failed to add product: {e}")
-        else:
-            st.error("❌ Scraping failed. The website might be blocking requests or the URL might be invalid.")
+                    # Add to database button
+                    if st.button("Add This Product", type="primary"):
+                        try:
+                            pid = db.add_product(
+                                url=product_data["url"],
+                                name=sanitize_text(product_data.get("title")),
+                                website=product_data.get("website"),
+                                category=None,
+                                image_path=None,
+                                user_threshold=user_threshold if user_threshold > 0 else None,
+                                check_frequency=6
+                            )
+                            
+                            # Download image
+                            if product_data.get("image_url"):
+                                image_path = download_image(product_data["image_url"], pid)
+                                if image_path:
+                                    db.update_product(pid, {"image_path": image_path})
+                            
+                            # Add price history
+                            if product_data.get("current_price"):
+                                db.add_price_history(
+                                    pid,
+                                    product_data["current_price"],
+                                    product_data.get("original_price"),
+                                    product_data.get("discount_percent"),
+                                    product_data.get("availability", True)
+                                )
+                            
+                            st.success("Product added successfully!")
+                            # Clear cache to refresh dashboard
+                            st.cache_data.clear()
+                            st.rerun()
+                            
+                        except Exception as e:
+                            st.error(f"Failed to add product: {e}")
+                else:
+                    st.error("❌ Failed to scrape product details.")
+                    st.error("💡 Try checking if the URL is accessible and the website is not blocking requests.")
+                    
+            except Exception as e:
+                st.error(f"❌ Scraping failed: {e}")
+                st.error("💡 This might be due to network issues or website blocking.")
 
 
 def render_analytics(cfg: dict, db: DatabaseManager) -> None:
@@ -822,7 +885,7 @@ def render_settings(cfg: dict, db: DatabaseManager) -> None:
             cfg["app"]["quiet_hours"]["end"] = quiet_end
             save_config(cfg)
             st.success("Settings saved. Reloading...")
-            st.experimental_rerun()
+            st.rerun()
 
 
 def render_websites(cfg: dict, db: DatabaseManager) -> None:
@@ -885,7 +948,12 @@ def render_websites(cfg: dict, db: DatabaseManager) -> None:
     website_icons = {
         'Amazon': '🛒',
         'Flipkart': '🛍️', 
-        'Snapdeal': '📦'
+        'Snapdeal': '📦',
+        'Meesho': '👗',
+        'Myntra': '👔',
+        'Nykaa': '💄',
+        'Ajio': '👕',
+        'JioMart': '🛒'
     }
     icon = website_icons.get(selected_website, '🌐')
     st.markdown(f"### {icon} {selected_website} Products")
@@ -895,90 +963,962 @@ def render_websites(cfg: dict, db: DatabaseManager) -> None:
         render_product_card(row, db, is_list=True)
 
 def render_alert_history(cfg: dict, db: DatabaseManager) -> None:
-    st.markdown("### 📬 Alert History")
+    """Render comprehensive alert history with integrated email management."""
+    st.markdown("### 📬 Alert History & Email Management")
     
-    # Get alerts from database
-    alerts = db.list_alerts()
+    # Quick overview of existing emails
+    st.markdown("#### 📊 Email Overview")
+    gmail_accounts = db.get_gmail_accounts(active_only=False)
+    subscribers = db.get_email_subscribers(active_only=False)
+    active_subscribers = db.get_email_subscribers(active_only=True)
+    default_account = db.get_default_gmail_account()
     
-    if not alerts:
-        st.info("No alerts generated yet. Alerts will appear here when price thresholds are met.")
-        return
-    
-    # Convert to DataFrame for better display
-    alerts_df = pd.DataFrame([dict(alert) for alert in alerts])
-    alerts_df['timestamp'] = pd.to_datetime(alerts_df['timestamp'])
-    alerts_df = alerts_df.sort_values('timestamp', ascending=False)
-    
-    # Filters
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        alert_type_filter = st.selectbox("Filter by Type", ["All"] + list(alerts_df['alert_type'].unique()))
-    with col2:
-        read_status = st.selectbox("Filter by Status", ["All", "Unread", "Read"])
-    with col3:
-        date_range = st.selectbox("Time Range", ["All", "Last 7 days", "Last 30 days"])
-    
-    # Apply filters
-    filtered_df = alerts_df.copy()
-    if alert_type_filter != "All":
-        filtered_df = filtered_df[filtered_df['alert_type'] == alert_type_filter]
-    if read_status == "Unread":
-        filtered_df = filtered_df[filtered_df['is_read'] == 0]
-    elif read_status == "Read":
-        filtered_df = filtered_df[filtered_df['is_read'] == 1]
-    if date_range == "Last 7 days":
-        cutoff = pd.Timestamp.now() - pd.Timedelta(days=7)
-        filtered_df = filtered_df[filtered_df['timestamp'] >= cutoff]
-    elif date_range == "Last 30 days":
-        cutoff = pd.Timestamp.now() - pd.Timedelta(days=30)
-        filtered_df = filtered_df[filtered_df['timestamp'] >= cutoff]
-    
-    # Display alerts
-    st.subheader(f"Alerts ({len(filtered_df)} found)")
-    
-    for _, alert in filtered_df.iterrows():
-        with st.container(border=True):
-            col1, col2, col3 = st.columns([3, 1, 1])
-            
-            with col1:
-                # Alert type with icon
-                alert_icons = {
-                    'threshold': '🎯',
-                    'percentage': '📉',
-                    'low': '🔥',
-                    'stock': '📦'
-                }
-                icon = alert_icons.get(alert['alert_type'], '📢')
-                st.markdown(f"{icon} **{alert['alert_type'].title()} Alert**")
-                st.write(alert['message'])
-                st.caption(f"Price at alert: ₹{alert['price_at_alert']:,.2f}" if alert['price_at_alert'] else "No price data")
-            
-            with col2:
-                st.metric("Date", alert['timestamp'].strftime('%Y-%m-%d'))
-                st.metric("Time", alert['timestamp'].strftime('%H:%M'))
-            
-            with col3:
-                if alert['is_read']:
-                    st.success("✅ Read")
-                else:
-                    st.warning("🔔 Unread")
-                
-                if not alert['is_read']:
-                    if st.button("Mark as Read", key=f"read_{alert['id']}"):
-                        db.mark_alert_read(alert['id'])
-                        st.rerun()
-    
-    # Summary statistics
-    st.subheader("Alert Summary")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("Total Alerts", len(alerts_df))
+        st.metric("📧 Gmail Accounts", len(gmail_accounts))
+        if default_account:
+            st.caption(f"Default: {default_account.email}")
     with col2:
-        st.metric("Unread Alerts", len(alerts_df[alerts_df['is_read'] == 0]))
+        st.metric("👥 Total Subscribers", len(subscribers))
     with col3:
-        st.metric("This Week", len(alerts_df[alerts_df['timestamp'] >= pd.Timestamp.now() - pd.Timedelta(days=7)]))
+        st.metric("✅ Active Subscribers", len(active_subscribers))
     with col4:
-        st.metric("This Month", len(alerts_df[alerts_df['timestamp'] >= pd.Timestamp.now() - pd.Timedelta(days=30)]))
+        if subscribers:
+            active_rate = (len(active_subscribers) / len(subscribers)) * 100
+            st.metric("📈 Active Rate", f"{active_rate:.1f}%")
+        else:
+            st.metric("📈 Active Rate", "0%")
+    
+    st.divider()
+    
+    # Create tabs for different sections
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📧 Alert History", "👥 Email Subscribers", "⏰ Alert Schedules", "📧 Gmail Accounts", "📧 Gmail Setup", "📊 Email Stats"])
+    
+    with tab1:
+        st.markdown("#### 📧 Alert History")
+        
+        # Get alerts from database
+        alerts = db.list_alerts()
+        
+        if not alerts:
+            st.info("No alerts generated yet. Alerts will appear here when price thresholds are met.")
+        else:
+            # Convert to DataFrame for better display
+            alerts_df = pd.DataFrame([dict(alert) for alert in alerts])
+            alerts_df['timestamp'] = pd.to_datetime(alerts_df['timestamp'])
+            alerts_df = alerts_df.sort_values('timestamp', ascending=False)
+            
+            # Filters
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                alert_type_filter = st.selectbox("Filter by Type", ["All"] + list(alerts_df['alert_type'].unique()))
+            with col2:
+                read_status = st.selectbox("Filter by Status", ["All", "Unread", "Read"])
+            with col3:
+                date_range = st.selectbox("Time Range", ["All", "Last 7 days", "Last 30 days"])
+            
+            # Apply filters
+            filtered_df = alerts_df.copy()
+            if alert_type_filter != "All":
+                filtered_df = filtered_df[filtered_df['alert_type'] == alert_type_filter]
+            if read_status == "Unread":
+                filtered_df = filtered_df[filtered_df['is_read'] == 0]
+            elif read_status == "Read":
+                filtered_df = filtered_df[filtered_df['is_read'] == 1]
+            if date_range == "Last 7 days":
+                cutoff = pd.Timestamp.now() - pd.Timedelta(days=7)
+                filtered_df = filtered_df[filtered_df['timestamp'] >= cutoff]
+            elif date_range == "Last 30 days":
+                cutoff = pd.Timestamp.now() - pd.Timedelta(days=30)
+                filtered_df = filtered_df[filtered_df['timestamp'] >= cutoff]
+            
+            # Display alerts
+            st.subheader(f"Alerts ({len(filtered_df)} found)")
+            
+            for _, alert in filtered_df.iterrows():
+                with st.container(border=True):
+                    col1, col2, col3 = st.columns([3, 1, 1])
+                    
+                    with col1:
+                        # Alert type with icon
+                        alert_icons = {
+                            'threshold': '🎯',
+                            'percentage': '📉',
+                            'low': '🔥',
+                            'stock': '📦'
+                        }
+                        icon = alert_icons.get(alert['alert_type'], '📢')
+                        st.markdown(f"{icon} **{alert['alert_type'].title()} Alert**")
+                        st.write(alert['message'])
+                        st.caption(f"Price at alert: ₹{alert['price_at_alert']:,.2f}" if alert['price_at_alert'] else "No price data")
+                    
+                    with col2:
+                        st.metric("Date", alert['timestamp'].strftime('%Y-%m-%d'))
+                        st.metric("Time", alert['timestamp'].strftime('%H:%M'))
+                    
+                    with col3:
+                        if alert['is_read']:
+                            st.success("✅ Read")
+                        else:
+                            st.warning("🔔 Unread")
+                        
+                        if not alert['is_read']:
+                            if st.button("Mark as Read", key=f"read_{alert['id']}"):
+                                db.mark_alert_read(alert['id'])
+                                st.rerun()
+            
+            # Summary statistics
+            st.subheader("Alert Summary")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total Alerts", len(alerts_df))
+            with col2:
+                st.metric("Unread Alerts", len(alerts_df[alerts_df['is_read'] == 0]))
+            with col3:
+                st.metric("This Week", len(alerts_df[alerts_df['timestamp'] >= pd.Timestamp.now() - pd.Timedelta(days=7)]))
+            with col4:
+                st.metric("This Month", len(alerts_df[alerts_df['timestamp'] >= pd.Timestamp.now() - pd.Timedelta(days=30)]))
+        
+        # Manual alert sending section
+        st.subheader("📧 Send Updates")
+        st.markdown("Send alerts to all active subscribers")
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            test_product_name = st.text_input("Product Name", value="Test Product", key="test_product_name")
+            test_price = st.number_input("Price (₹)", value=999.99, min_value=0.0, step=0.01, key="test_price")
+            test_message = st.text_area("Alert Message", value="This is a test alert from Price Tracker!", key="test_message")
+            
+            # Quick action buttons
+            col_quick1, col_quick2, col_quick3 = st.columns(3)
+            with col_quick1:
+                if st.button("📧 Send Test Alert", type="primary"):
+                    if db.get_email_subscribers(active_only=True):
+                        try:
+                            test_product = {
+                                "name": test_product_name,
+                                "current_price": test_price,
+                                "original_price": test_price * 1.2,
+                                "discount_percent": 16.7,
+                                "website": "Test Store",
+                                "url": "https://example.com",
+                                "availability": True
+                            }
+                            
+                            send_alert_to_subscribers(test_product, test_message, db)
+                            st.success("✅ Test alert sent to all subscribers!")
+                        except Exception as e:
+                            st.error(f"❌ Failed to send test alert: {e}")
+                    else:
+                        st.error("❌ No active subscribers to send alerts to")
+            
+            with col_quick2:
+                if st.button("🔄 Send All Product Updates"):
+                    if db.get_email_subscribers(active_only=True):
+                        try:
+                            products_df = load_products(db)
+                            sent_count = 0
+                            for _, product in products_df.iterrows():
+                                # Get current price from latest price history
+                                price_history = db.list_price_history(product['id'])
+                                if price_history:
+                                    # Handle both dataclass and Row objects
+                                    latest_price_entry = price_history[-1]
+                                    if hasattr(latest_price_entry, 'price'):
+                                        latest_price = latest_price_entry.price
+                                    else:
+                                        # It's a sqlite3.Row object
+                                        latest_price = latest_price_entry['price']
+                                else:
+                                    latest_price = 0.0
+                                
+                                # Create product data with all required fields
+                                product_data = {
+                                    "id": product['id'],
+                                    "name": product.get('name', 'Unknown Product'),
+                                    "current_price": latest_price,
+                                    "original_price": latest_price * 1.2,  # Estimate original price
+                                    "discount_percent": 0.0,
+                                    "website": product.get('website', 'Unknown'),
+                                    "url": product.get('url', ''),
+                                    "availability": True
+                                }
+                                
+                                alert_msg = f"Price update for {product_data['name']}: ₹{latest_price}"
+                                send_alert_to_subscribers(product_data, alert_msg, db)
+                                sent_count += 1
+                            st.success(f"✅ Sent updates for {sent_count} products!")
+                        except Exception as e:
+                            st.error(f"❌ Failed to send product updates: {e}")
+                    else:
+                        st.error("❌ No active subscribers to send alerts to")
+            
+            with col_quick3:
+                if st.button("📊 Send Weekly Summary"):
+                    if db.get_email_subscribers(active_only=True):
+                        try:
+                            # Create weekly summary
+                            products_df = load_products(db)
+                            summary_msg = f"Weekly Price Tracker Summary:\n\nTracked Products: {len(products_df)}\nActive Subscribers: {len(db.get_email_subscribers(active_only=True))}\n\nKeep tracking for the best deals!"
+                            
+                            summary_product = {
+                                "name": "Weekly Price Tracker Summary",
+                                "current_price": 0.00,
+                                "original_price": 0.00,
+                                "discount_percent": 0.0,
+                                "website": "Price Tracker",
+                                "url": "https://github.com/your-repo/price-tracker",
+                                "availability": True
+                            }
+                            
+                            send_alert_to_subscribers(summary_product, summary_msg, db)
+                            st.success("✅ Weekly summary sent to all subscribers!")
+                        except Exception as e:
+                            st.error(f"❌ Failed to send weekly summary: {e}")
+                    else:
+                        st.error("❌ No active subscribers to send alerts to")
+        
+        with col2:
+            st.markdown("**Send to:**")
+            subscribers = db.get_email_subscribers(active_only=True)
+            if subscribers:
+                st.write(f"📧 **{len(subscribers)} Active Subscribers:**")
+                for sub in subscribers:
+                    st.write(f"• {sub.email}")
+            else:
+                st.warning("No active subscribers")
+            
+            st.markdown("**Gmail Account:**")
+            default_account = db.get_default_gmail_account()
+            if default_account:
+                st.success(f"✅ {default_account.email}")
+            else:
+                st.error("❌ No default Gmail account")
+    
+    with tab2:
+        st.markdown("#### 👥 Email Subscribers")
+        
+        # Show existing subscribers
+        existing_subscribers = db.get_email_subscribers(active_only=False)
+        if existing_subscribers:
+            st.markdown("#### 📋 Existing Email Subscribers")
+            for subscriber in existing_subscribers:
+                col1, col2, col3 = st.columns([3, 1, 1])
+                with col1:
+                    st.write(f"📧 **{subscriber.email}**")
+                    if subscriber.name:
+                        st.caption(f"👤 {subscriber.name}")
+                with col2:
+                    status = "✅ Active" if subscriber.is_active else "❌ Inactive"
+                    st.write(status)
+                with col3:
+                    st.caption(f"Added: {subscriber.created_at[:10] if subscriber.created_at else 'Unknown'}")
+            st.divider()
+        
+        # Add new subscriber
+        with st.expander("➕ Add New Subscriber", expanded=True):
+            # Initialize session state for preferences
+            if "subscriber_preferences_json" not in st.session_state:
+                st.session_state.subscriber_preferences_json = '''{
+    "frequency": "daily",
+    "alert_types": ["price_drop", "back_in_stock"],
+    "quiet_hours": {
+        "start": "22:00",
+        "end": "08:00"
+    },
+    "max_alerts_per_day": 5
+}'''
+            
+            # Quick preset buttons (outside form)
+            st.markdown("**Quick Presets:**")
+            col_preset1, col_preset2, col_preset3 = st.columns(3)
+            with col_preset1:
+                if st.button("📧 Daily Alerts", help="Daily frequency with all alert types", key="preset_daily"):
+                    st.session_state.subscriber_preferences_json = '''{
+    "frequency": "daily",
+    "alert_types": ["price_drop", "back_in_stock", "threshold_breach", "historical_low"],
+    "quiet_hours": {
+        "start": "22:00",
+        "end": "08:00"
+    },
+    "max_alerts_per_day": 10
+}'''
+                    st.rerun()
+            with col_preset2:
+                if st.button("📊 Weekly Summary", help="Weekly frequency with price drops only", key="preset_weekly"):
+                    st.session_state.subscriber_preferences_json = '''{
+    "frequency": "weekly",
+    "alert_types": ["price_drop"],
+    "quiet_hours": {
+        "start": "22:00",
+        "end": "08:00"
+    },
+    "max_alerts_per_day": 2
+}'''
+                    st.rerun()
+            with col_preset3:
+                if st.button("🚨 Urgent Only", help="Immediate alerts for threshold breaches only", key="preset_urgent"):
+                    st.session_state.subscriber_preferences_json = '''{
+    "frequency": "immediate",
+    "alert_types": ["threshold_breach"],
+    "quiet_hours": {
+        "start": "23:00",
+        "end": "07:00"
+    },
+    "max_alerts_per_day": 3
+}'''
+                    st.rerun()
+            
+            with st.form("add_subscriber"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    email = st.text_input("Email Address", placeholder="user@example.com")
+                with col2:
+                    name = st.text_input("Name (Optional)", placeholder="John Doe")
+                
+                # JSON preferences with session state
+                preferences_text = st.text_area(
+                    "Preferences (JSON)", 
+                    value=st.session_state.subscriber_preferences_json,
+                    key="subscriber_preferences_textarea",
+                    help="JSON format for email preferences. Valid alert_types: price_drop, back_in_stock, threshold_breach, historical_low"
+                )
+                
+                # Validate JSON
+                try:
+                    import json
+                    preferences_dict = json.loads(preferences_text)
+                    st.success("✅ Valid JSON format")
+                    preferences = preferences_text
+                except json.JSONDecodeError as e:
+                    st.error(f"❌ Invalid JSON format: {e}")
+                    st.info("Using default preferences")
+                    default_preferences = {
+                        "frequency": "daily",
+                        "alert_types": ["price_drop", "back_in_stock"],
+                        "quiet_hours": {"start": "22:00", "end": "08:00"},
+                        "max_alerts_per_day": 5
+                    }
+                    preferences = json.dumps(default_preferences)
+                
+                if st.form_submit_button("Add Subscriber"):
+                    if email and "@" in email:
+                        try:
+                            # Check if email already exists
+                            existing_subscribers = db.get_email_subscribers(active_only=False)
+                            if any(sub.email.lower() == email.lower() for sub in existing_subscribers):
+                                st.error(f"❌ Email subscriber {email} already exists!")
+                            else:
+                                db.add_email_subscriber(email, name, preferences)
+                                st.success(f"✅ Added subscriber: {email}")
+                                
+                                # Send welcome email to new subscriber
+                                try:
+                                    send_welcome_email(email, name, db)
+                                    st.success("📧 Welcome email sent!")
+                                except Exception as email_error:
+                                    st.warning(f"⚠️ Subscriber added but welcome email failed: {email_error}")
+                                
+                                st.rerun()
+                        except Exception as e:
+                            if "UNIQUE constraint failed" in str(e):
+                                st.error(f"❌ Email subscriber {email} already exists!")
+                            else:
+                                st.error(f"❌ Failed to add subscriber: {e}")
+                    else:
+                        st.error("Please enter a valid email address")
+        
+        # List subscribers
+        st.markdown("#### 📋 Current Subscribers")
+        subscribers = db.get_email_subscribers(active_only=False)
+        
+        if subscribers:
+            for sub in subscribers:
+                col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
+                with col1:
+                    st.write(f"📧 {sub.email}")
+                    if sub.name:
+                        st.caption(f"👤 {sub.name}")
+                with col2:
+                    status = "✅ Active" if sub.is_active else "❌ Inactive"
+                    st.write(status)
+                with col3:
+                    if st.button("✏️", key=f"edit_{sub.id}"):
+                        st.session_state[f"edit_sub_{sub.id}"] = True
+                with col4:
+                    if st.button("🗑️", key=f"delete_{sub.id}"):
+                        if st.session_state.get(f"confirm_delete_{sub.id}", False):
+                            db.delete_email_subscriber(sub.id)
+                            st.success("Subscriber deleted!")
+                            st.rerun()
+                        else:
+                            st.session_state[f"confirm_delete_{sub.id}"] = True
+                            st.warning("Click again to confirm deletion")
+                
+                # Edit form
+                if st.session_state.get(f"edit_sub_{sub.id}", False):
+                    with st.form(f"edit_subscriber_{sub.id}"):
+                        new_email = st.text_input("Email", value=sub.email)
+                        new_name = st.text_input("Name", value=sub.name or "")
+                        new_preferences = st.text_area("Preferences", value=sub.preferences)
+                        new_active = st.checkbox("Active", value=sub.is_active)
+                        
+                        col_save, col_cancel = st.columns(2)
+                        with col_save:
+                            if st.form_submit_button("💾 Save"):
+                                db.update_email_subscriber(
+                                    sub.id,
+                                    email=new_email,
+                                    name=new_name,
+                                    preferences=new_preferences,
+                                    is_active=new_active
+                                )
+                                del st.session_state[f"edit_sub_{sub.id}"]
+                                st.success("Subscriber updated!")
+                                st.rerun()
+                        with col_cancel:
+                            if st.form_submit_button("❌ Cancel"):
+                                del st.session_state[f"edit_sub_{sub.id}"]
+                                st.rerun()
+                
+                st.divider()
+        else:
+            st.info("No subscribers found. Add your first subscriber above!")
+    
+    with tab3:
+        st.markdown("#### ⏰ Alert Schedules")
+        
+        # Add new schedule
+        with st.expander("➕ Add New Schedule", expanded=True):
+            with st.form("add_schedule"):
+                name = st.text_input("Schedule Name", placeholder="Daily Price Check")
+                frequency = st.number_input("Frequency (hours)", min_value=1, max_value=168, value=24, help="How often to send alerts (1-168 hours)")
+                
+                if st.form_submit_button("Add Schedule"):
+                    try:
+                        db.add_alert_schedule(name, frequency)
+                        st.success(f"✅ Added schedule: {name}")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Failed to add schedule: {e}")
+        
+        # List schedules
+        st.markdown("#### 📋 Current Schedules")
+        schedules = db.get_alert_schedules(active_only=False)
+        
+        if schedules:
+            for schedule in schedules:
+                col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
+                with col1:
+                    st.write(f"⏰ {schedule.name}")
+                    st.caption(f"Every {schedule.frequency_hours} hours")
+                with col2:
+                    status = "✅ Active" if schedule.is_active else "❌ Inactive"
+                    st.write(status)
+                with col3:
+                    if st.button("✏️", key=f"edit_schedule_{schedule.id}"):
+                        st.session_state[f"edit_schedule_{schedule.id}"] = True
+                with col4:
+                    if st.button("🗑️", key=f"delete_schedule_{schedule.id}"):
+                        if st.session_state.get(f"confirm_delete_schedule_{schedule.id}", False):
+                            db.delete_alert_schedule(schedule.id)
+                            st.success("Schedule deleted!")
+                            st.rerun()
+                        else:
+                            st.session_state[f"confirm_delete_schedule_{schedule.id}"] = True
+                            st.warning("Click again to confirm deletion")
+                
+                # Edit form
+                if st.session_state.get(f"edit_schedule_{schedule.id}", False):
+                    with st.form(f"edit_schedule_{schedule.id}"):
+                        new_name = st.text_input("Name", value=schedule.name)
+                        new_frequency = st.number_input("Frequency (hours)", value=int(schedule.frequency_hours), min_value=1, max_value=168)
+                        new_active = st.checkbox("Active", value=schedule.is_active)
+                        
+                        col_save, col_cancel = st.columns(2)
+                        with col_save:
+                            if st.form_submit_button("💾 Save"):
+                                db.update_alert_schedule(
+                                    schedule.id,
+                                    name=new_name,
+                                    frequency_hours=new_frequency,
+                                    is_active=new_active
+                                )
+                                del st.session_state[f"edit_schedule_{schedule.id}"]
+                                st.success("Schedule updated!")
+                                st.rerun()
+                        with col_cancel:
+                            if st.form_submit_button("❌ Cancel"):
+                                del st.session_state[f"edit_schedule_{schedule.id}"]
+                                st.rerun()
+                
+                st.divider()
+        else:
+            st.info("No schedules found. Add your first schedule above!")
+    
+    with tab4:
+        st.markdown("#### 📧 Gmail Accounts Management")
+        
+        # Show existing Gmail accounts
+        existing_gmail_accounts = db.get_gmail_accounts(active_only=False)
+        if existing_gmail_accounts:
+            st.markdown("#### 📋 Existing Gmail Accounts")
+            for account in existing_gmail_accounts:
+                col1, col2, col3 = st.columns([3, 1, 1])
+                with col1:
+                    st.write(f"📧 **{account.email}**")
+                    if account.name:
+                        st.caption(f"👤 {account.name}")
+                with col2:
+                    if account.is_default:
+                        st.success("⭐ Default")
+                    else:
+                        st.info("Secondary")
+                with col3:
+                    status = "✅ Active" if account.is_active else "❌ Inactive"
+                    st.write(status)
+            st.divider()
+        
+        # Add new Gmail account
+        with st.expander("➕ Add New Gmail Account", expanded=True):
+            with st.form("add_gmail_account"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    gmail_email = st.text_input("Gmail Address", placeholder="your.email@gmail.com")
+                with col2:
+                    gmail_name = st.text_input("Account Name (Optional)", placeholder="Personal Gmail")
+                
+                gmail_password = st.text_input("App Password", type="password", placeholder="16-character app password")
+                is_default = st.checkbox("Set as Default Account", help="This will be used for sending emails")
+                
+                col_test, col_add = st.columns(2)
+                with col_test:
+                    if st.form_submit_button("🧪 Test Account"):
+                        if gmail_email and gmail_password:
+                            with st.spinner("Testing Gmail account..."):
+                                if db.test_gmail_account(gmail_email, gmail_password):
+                                    st.success("✅ Gmail account test successful!")
+                                else:
+                                    st.error("❌ Gmail account test failed. Check your credentials.")
+                        else:
+                            st.error("Please enter both email and app password")
+                
+                with col_add:
+                    if st.form_submit_button("Add Gmail Account"):
+                        if gmail_email and gmail_password and "@" in gmail_email:
+                            try:
+                                # Check if email already exists
+                                existing_accounts = db.get_gmail_accounts(active_only=False)
+                                if any(acc.email.lower() == gmail_email.lower() for acc in existing_accounts):
+                                    st.error(f"❌ Gmail account {gmail_email} already exists!")
+                                else:
+                                    db.add_gmail_account(gmail_email, gmail_password, gmail_name, is_default)
+                                    st.success(f"✅ Added Gmail account: {gmail_email}")
+                                    st.rerun()
+                            except Exception as e:
+                                if "UNIQUE constraint failed" in str(e):
+                                    st.error(f"❌ Gmail account {gmail_email} already exists!")
+                                else:
+                                    st.error(f"❌ Failed to add Gmail account: {e}")
+                        else:
+                            st.error("Please enter a valid Gmail address and app password")
+        
+        # List Gmail accounts
+        st.markdown("#### 📋 Current Gmail Accounts")
+        gmail_accounts = db.get_gmail_accounts(active_only=False)
+        
+        if gmail_accounts:
+            for account in gmail_accounts:
+                col1, col2, col3, col4, col5 = st.columns([3, 2, 1, 1, 1])
+                with col1:
+                    st.write(f"📧 {account.email}")
+                    if account.name:
+                        st.caption(f"👤 {account.name}")
+                    if account.is_default:
+                        st.caption("⭐ Default Account")
+                with col2:
+                    status = "✅ Active" if account.is_active else "❌ Inactive"
+                    st.write(status)
+                with col3:
+                    if st.button("🧪", key=f"test_{account.id}", help="Test Account"):
+                        with st.spinner("Testing..."):
+                            if db.test_gmail_account(account.email, account.app_password):
+                                st.success("✅ Test successful!")
+                            else:
+                                st.error("❌ Test failed!")
+                with col4:
+                    if st.button("✏️", key=f"edit_gmail_{account.id}"):
+                        st.session_state[f"edit_gmail_{account.id}"] = True
+                with col5:
+                    if st.button("🗑️", key=f"delete_gmail_{account.id}"):
+                        if st.session_state.get(f"confirm_delete_gmail_{account.id}", False):
+                            db.delete_gmail_account(account.id)
+                            st.success("Gmail account deleted!")
+                            st.rerun()
+                        else:
+                            st.session_state[f"confirm_delete_gmail_{account.id}"] = True
+                            st.warning("Click again to confirm deletion")
+                
+                # Edit form
+                if st.session_state.get(f"edit_gmail_{account.id}", False):
+                    with st.form(f"edit_gmail_{account.id}"):
+                        new_email = st.text_input("Email", value=account.email)
+                        new_name = st.text_input("Name", value=account.name or "")
+                        new_password = st.text_input("App Password", type="password", value=account.app_password)
+                        new_active = st.checkbox("Active", value=account.is_active)
+                        new_default = st.checkbox("Default Account", value=account.is_default)
+                        
+                        col_save, col_cancel = st.columns(2)
+                        with col_save:
+                            if st.form_submit_button("💾 Save"):
+                                db.update_gmail_account(
+                                    account.id,
+                                    email=new_email,
+                                    name=new_name,
+                                    app_password=new_password,
+                                    is_active=new_active,
+                                    is_default=new_default
+                                )
+                                del st.session_state[f"edit_gmail_{account.id}"]
+                                st.success("Gmail account updated!")
+                                st.rerun()
+                        with col_cancel:
+                            if st.form_submit_button("❌ Cancel"):
+                                del st.session_state[f"edit_gmail_{account.id}"]
+                                st.rerun()
+                
+                st.divider()
+        else:
+            st.info("No Gmail accounts found. Add your first Gmail account above!")
+    
+    with tab5:
+        st.markdown("#### 📧 Gmail Configuration")
+        
+        st.markdown("""
+        ### 🔧 How to Set Up Gmail for Price Tracker
+        
+        **Step 1: Enable 2-Factor Authentication**
+        1. Go to [Google Account Settings](https://myaccount.google.com/)
+        2. Click on "Security" in the left sidebar
+        3. Enable "2-Step Verification" if not already enabled
+        
+        **Step 2: Generate App Password**
+        1. In Google Account Settings, go to "Security"
+        2. Under "2-Step Verification", click "App passwords"
+        3. Select "Mail" and "Other (Custom name)"
+        4. Enter "Price Tracker" as the name
+        5. Copy the generated 16-character password
+        
+        **Step 3: Configure in .env File**
+        Create or edit the `.env` file in your project directory:
+        ```env
+        EMAIL_ADDRESS=your_email@gmail.com
+        EMAIL_APP_PASSWORD=your_16_character_app_password
+        ADMIN_EMAIL=your_email@gmail.com
+        ```
+        
+        **Step 4: Test Configuration**
+        Use the test button below to verify your settings work.
+        """)
+        
+        # Test email configuration
+        if st.button("🧪 Test Email Configuration"):
+            try:
+                from alerts.email_handler import EmailHandler, EmailConfig
+                
+                # Get default Gmail account from database
+                default_account = db.get_default_gmail_account()
+                if not default_account:
+                    st.error("❌ No default Gmail account configured")
+                    st.error("Please add a Gmail account in the 'Gmail Accounts' tab and set it as default")
+                else:
+                    email_config = EmailConfig(
+                        address=default_account.email,
+                        app_password=default_account.app_password,
+                        admin_email=default_account.email,
+                        quiet_start="22:00",
+                        quiet_end="08:00"
+                    )
+                    
+                    email_handler = EmailHandler(email_config)
+                    
+                    # Send test email
+                    test_subscribers = db.get_email_subscribers(active_only=True)
+                    if test_subscribers:
+                        test_emails = [sub.email for sub in test_subscribers[:1]]  # Test with first subscriber
+                    else:
+                        test_emails = [default_account.email]  # Test with Gmail account
+                    
+                    email_handler.send_alert(
+                        to_emails=test_emails,
+                        subject="🧪 Price Tracker Test Email",
+                        product={
+                            "name": "Test Product",
+                            "current_price": 999.99,
+                            "original_price": 1299.99,
+                            "discount_percent": 23.1,
+                            "website": "Test Store",
+                            "url": "https://example.com",
+                            "availability": True
+                        },
+                        history_df=pd.DataFrame({
+                            "timestamp": ["2024-01-01", "2024-01-02"],
+                            "price": [1299.99, 999.99]
+                        }),
+                        alert_message="This is a test email from Price Tracker!",
+                        buy_url="https://example.com"
+                    )
+                    
+                    st.success("✅ Test email sent successfully!")
+                    st.success(f"📧 Sent to: {', '.join(test_emails)}")
+            except Exception as e:
+                st.error(f"❌ Test failed: {e}")
+                st.error("Please check your Gmail configuration in the .env file")
+    
+    with tab5:
+        st.markdown("#### 📊 Email Statistics")
+        
+        # Get stats
+        subscribers = db.get_email_subscribers(active_only=False)
+        active_subscribers = len([s for s in subscribers if s.is_active])
+        schedules = db.get_alert_schedules(active_only=False)
+        active_schedules = len([s for s in schedules if s.is_active])
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Subscribers", len(subscribers))
+        with col2:
+            st.metric("Active Subscribers", active_subscribers)
+        with col3:
+            st.metric("Total Schedules", len(schedules))
+        with col4:
+            st.metric("Active Schedules", active_schedules)
+        
+        # Email configuration status
+        st.markdown("#### 🔧 Configuration Status")
+        email_address = os.getenv("EMAIL_ADDRESS", "")
+        email_password = os.getenv("EMAIL_APP_PASSWORD", "")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if email_address:
+                st.success("✅ Email address configured")
+            else:
+                st.error("❌ Email address not configured")
+        
+        with col2:
+            if email_password:
+                st.success("✅ App password configured")
+            else:
+                st.error("❌ App password not configured")
+        
+        # Recent activity
+        st.markdown("#### 📈 Recent Activity")
+        st.info("Email activity tracking will be implemented in future updates.")
+    
+    with tab6:
+        st.markdown("#### 📊 Email Statistics")
+        
+        # Subscriber statistics
+        st.markdown("#### 👥 Subscriber Statistics")
+        subscribers = db.get_email_subscribers(active_only=False)
+        active_subscribers = db.get_email_subscribers(active_only=True)
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Subscribers", len(subscribers))
+        with col2:
+            st.metric("Active Subscribers", len(active_subscribers))
+        with col3:
+            st.metric("Inactive Subscribers", len(subscribers) - len(active_subscribers))
+        with col4:
+            if subscribers:
+                st.metric("Active Rate", f"{(len(active_subscribers)/len(subscribers)*100):.1f}%")
+            else:
+                st.metric("Active Rate", "0%")
+        
+        # Gmail account statistics
+        st.markdown("#### 📧 Gmail Account Statistics")
+        gmail_accounts = db.get_gmail_accounts(active_only=False)
+        active_gmail_accounts = db.get_gmail_accounts(active_only=True)
+        default_account = db.get_default_gmail_account()
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Gmail Accounts", len(gmail_accounts))
+        with col2:
+            st.metric("Active Gmail Accounts", len(active_gmail_accounts))
+        with col3:
+            st.metric("Inactive Gmail Accounts", len(gmail_accounts) - len(active_gmail_accounts))
+        with col4:
+            if default_account:
+                st.metric("Default Account", "✅ Set")
+            else:
+                st.metric("Default Account", "❌ Not Set")
+        
+        # Configuration status
+        st.markdown("#### ⚙️ Configuration Status")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if gmail_accounts:
+                st.success(f"✅ {len(gmail_accounts)} Gmail account(s) configured")
+                if default_account:
+                    st.success(f"✅ Default account: {default_account.email}")
+                else:
+                    st.warning("⚠️ No default Gmail account set")
+            else:
+                st.error("❌ No Gmail accounts configured")
+        
+        with col2:
+            if os.getenv("EMAIL_ADDRESS") and os.getenv("EMAIL_APP_PASSWORD"):
+                st.info("ℹ️ Environment variables also configured")
+            else:
+                st.info("ℹ️ Using database Gmail accounts only")
+        
+        # Gmail account details
+        if gmail_accounts:
+            st.markdown("#### 📧 Gmail Account Details")
+            for account in gmail_accounts:
+                col1, col2, col3 = st.columns([2, 1, 1])
+                with col1:
+                    st.write(f"📧 {account.email}")
+                    if account.name:
+                        st.caption(f"👤 {account.name}")
+                with col2:
+                    if account.is_default:
+                        st.success("⭐ Default")
+                    else:
+                        st.info("Secondary")
+                with col3:
+                    if account.last_used:
+                        st.caption(f"Last used: {account.last_used[:10]}")
+                    else:
+                        st.caption("Never used")
+        
+        # Alert schedule statistics
+        st.markdown("#### ⏰ Alert Schedule Statistics")
+        schedules = db.get_alert_schedules(active_only=False)
+        active_schedules = db.get_alert_schedules(active_only=True)
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Schedules", len(schedules))
+        with col2:
+            st.metric("Active Schedules", len(active_schedules))
+        with col3:
+            st.metric("Inactive Schedules", len(schedules) - len(active_schedules))
+
+
+def send_welcome_email(email: str, name: str, db: DatabaseManager) -> None:
+    """Send welcome email to new subscriber."""
+    try:
+        from alerts.email_handler import EmailHandler, EmailConfig
+        
+        # Get default Gmail account from database
+        default_account = db.get_default_gmail_account()
+        if not default_account:
+            raise Exception("No default Gmail account configured")
+        
+        email_config = EmailConfig(
+            address=default_account.email,
+            app_password=default_account.app_password,
+            admin_email=default_account.email,
+            quiet_start="22:00",
+            quiet_end="08:00"
+        )
+        
+        email_handler = EmailHandler(email_config)
+        
+        # Create welcome email content
+        welcome_product = {
+            "name": "Welcome to Price Tracker!",
+            "current_price": 0.00,
+            "original_price": 0.00,
+            "discount_percent": 0.0,
+            "website": "Price Tracker",
+            "url": "https://github.com/your-repo/price-tracker",
+            "availability": True
+        }
+        
+        welcome_message = f"Welcome {name or 'to Price Tracker'}! You'll now receive alerts when products you're tracking have price changes."
+        
+        email_handler.send_alert(
+            to_emails=[email],
+            subject="🎉 Welcome to Price Tracker!",
+            product=welcome_product,
+            history_df=pd.DataFrame({
+                "timestamp": ["2024-01-01"],
+                "price": [0.00]
+            }),
+            alert_message=welcome_message,
+            buy_url="https://github.com/your-repo/price-tracker"
+        )
+        
+        # Update last used timestamp
+        db.update_gmail_account(default_account.id, last_used=datetime.now().isoformat())
+        
+    except Exception as e:
+        logger.error(f"Failed to send welcome email: {e}")
+        raise
+
+
+def send_alert_to_subscribers(product_data: dict, alert_message: str, db: DatabaseManager) -> None:
+    """Send price alert to all active subscribers."""
+    try:
+        from alerts.email_handler import EmailHandler, EmailConfig
+        
+        # Get default Gmail account from database
+        default_account = db.get_default_gmail_account()
+        if not default_account:
+            logger.warning("No default Gmail account configured, skipping email alerts")
+            return
+        
+        email_config = EmailConfig(
+            address=default_account.email,
+            app_password=default_account.app_password,
+            admin_email=default_account.email,
+            quiet_start="22:00",
+            quiet_end="08:00"
+        )
+        
+        # Get active subscribers
+        subscribers = db.get_email_subscribers(active_only=True)
+        if not subscribers:
+            logger.info("No active subscribers found")
+            return
+        
+        email_handler = EmailHandler(email_config)
+        subscriber_emails = [sub.email for sub in subscribers]
+        
+        # Get price history for the product
+        price_history = db.list_price_history(product_data.get('id'))
+        if price_history:
+            history_df = pd.DataFrame([dict(ph) for ph in price_history])
+            history_df['timestamp'] = pd.to_datetime(history_df['timestamp'])
+        else:
+            history_df = pd.DataFrame({
+                "timestamp": [pd.Timestamp.now()],
+                "price": [product_data.get('current_price', 0)]
+            })
+        
+        # Send alert to all subscribers
+        email_handler.send_alert(
+            to_emails=subscriber_emails,
+            subject=f"🚨 Price Alert: {product_data.get('name', 'Product')}",
+            product=product_data,
+            history_df=history_df,
+            alert_message=alert_message,
+            buy_url=product_data.get('url', '')
+        )
+        
+        # Update last used timestamp
+        db.update_gmail_account(default_account.id, last_used=datetime.now().isoformat())
+        
+        logger.info(f"Price alert sent to {len(subscriber_emails)} subscribers")
+        
+    except Exception as e:
+        logger.error(f"Failed to send alert to subscribers: {e}")
 
 
 def main() -> None:
